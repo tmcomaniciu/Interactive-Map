@@ -1,70 +1,87 @@
-//TODO: get user location then find taco trucks near them, not random
-//https://developer.mozilla.org/en-US/docs/Web/API/Geolocation/getCurrentPosition
-async function getCoords(){
-    //user might reject or accept or take 5min to see that i asked them to give permission
-    //dont return promise resolve inline
-    let pos = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject)
-    })
+const myMap = {
+  coordinates: [],
+  businesses: [],
+  map: {},
+  markers: {},
 
-    //make it a little less accurate so not invasive of user privacy by rounding away digits
-    return [Math.floor(pos.coords.latitude), Math.floor(pos.coords.longitude)]
-    
-}
-function createMap(coords, tacoTrucks){
-    //Create map
+  buildMap() {
+    this.map = L.map("map", {
+      center: this.coordinates,
+      zoom: 13,
+    });
 
-    var map = L.map('map').setView(coords, 13);
-    //Load tiles
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    }).addTo(map);
-    //Add markers
-    tacoTrucks.forEach(t => createMarker(t, map))
-    
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      minZoom: "8",
+    }).addTo(this.map);
 
-}
-
-function createMarker(t,map){
-    //map was undefined but their code didn't throw ref error
-    // console.log("whats wrong", t, map)
-    var marker = L.marker([t.lat, t.long]).bindPopup(t.name).addTo(map);
-}
-
-//get tacos from api
-let tacos_api_base_url = "https://60d23844858b410017b2d60b.mockapi.io/tacos"
-async function getTacoTrucks(){
-    let response = await fetch(tacos_api_base_url)
-    let data = await response.json()
-    return data
-}
-
-async function searchTrucks(searchTerm){
-    //load some data from an api
-    //hard to make this global because it is loaded in promise
-    let tacoTrucks = await getTacoTrucks()
-    // console.log(tacoTrucks)
-    //look inside each truck name does contain searchTerm?
-    if(searchTerm === undefined || searchTerm === ""){
-        return tacoTrucks
+    const marker = L.marker(this.coordinates);
+    marker
+      .addTo(this.map)
+      .bindPopup("<p1><b>Hello, You are right here!</b><br></p1>")
+      .openPopup();
+  },
+  // add  markers
+  addMarkers() {
+    for (var i = 0; i < this.businesses.length; i++) {
+      this.markers = L.marker([this.businesses[i].lat, this.businesses[i].long])
+        .bindPopup(`<p1>${this.businesses[i].name}</p1>`)
+        .addTo(this.map);
     }
-    return tacoTrucks.filter(t => t.name.includes(searchTerm.toLowerCase()))
+  },
+};
+// get coordinates from the geolocation api
+async function getCoords() {
+  const pos = await new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject);
+  });
+  return [Math.floor(pos.coords.latitude), Math.floor(pos.coords.longitude)];
 }
-
-//entry point of our code
-async function main(){
-
-    
-    let tacoTrucks = await searchTrucks()
-    console.log(tacoTrucks)
-
-    //get coords
-    let coords = await getCoords()
-    console.log(coords)
-    //add map to screen
-    createMap(coords, tacoTrucks)
+// get foursquare businesses
+async function getFoursquare(business) {
+  const options = {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: "fsq39nJkgK5siDaOrBajgtDkHuABZwU9Z2u2y5FfidMDeEQ=",
+    },
+  };
+  let limit = 5;
+  let lat = myMap.coordinates[0];
+  let lon = myMap.coordinates[1];
+  let response = await fetch(
+    `https://cors-anywhere.herokuapp.com/https://api.foursquare.com/v3/places/search?&query=${business}&limit=${limit}&ll=${lat}%2C${lon}`,
+    options
+  );
+  let data = await response.text();
+  let parsedData = JSON.parse(data);
+  let businesses = parsedData.results;
+  return businesses;
 }
-
-//execute main
-main()
+// process foursquare array
+function processBusinesses(data) {
+  let businesses = data.map((element) => {
+    let location = {
+      name: element.name,
+      lat: element.geocodes.main.latitude,
+      long: element.geocodes.main.longitude,
+    };
+    return location;
+  });
+  return businesses;
+}
+// window
+window.onload = async () => {
+  const coords = await getCoords();
+  myMap.coordinates = coords;
+  myMap.buildMap();
+};
+//submit button
+document.getElementById("submit").addEventListener("click", async (event) => {
+  event.preventDefault();
+  let business = document.getElementById("business").value;
+  let data = await getFoursquare(business);
+  myMap.businesses = processBusinesses(data);
+  myMap.addMarkers();
+});
