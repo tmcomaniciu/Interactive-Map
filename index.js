@@ -1,87 +1,114 @@
 const myMap = {
   coordinates: [],
-  businesses: [],
   map: {},
-  markers: {},
-
-  buildMap() {
-    this.map = L.map("map", {
-      center: this.coordinates,
-      zoom: 13,
-    });
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  placesLayer: {},
+  businessMarkers: [],
+  createMap() {
+    this.map = L.map("map").setView(this.coordinates, 12);
+    //Load tiles
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 12,
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      minZoom: "8",
+        '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(this.map);
-
-    const marker = L.marker(this.coordinates);
-    marker
-      .addTo(this.map)
-      .bindPopup("<p1><b>Hello, You are right here!</b><br></p1>")
-      .openPopup();
-  },
-  // add  markers
-  addMarkers() {
-    for (var i = 0; i < this.businesses.length; i++) {
-      this.markers = L.marker([this.businesses[i].lat, this.businesses[i].long])
-        .bindPopup(`<p1>${this.businesses[i].name}</p1>`)
-        .addTo(this.map);
-    }
+    //Add geolocation marker
+    var marker = L.marker(this.coordinates).addTo(this.map);
+    marker.bindPopup("<b>You are here</b>").openPopup();
+    this.placesLayer = L.layerGroup().addTo(this.map);
   },
 };
-// get coordinates from the geolocation api
+
 async function getCoords() {
-  const pos = await new Promise((resolve, reject) => {
+  let pos = await new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(resolve, reject);
   });
+
   return [Math.floor(pos.coords.latitude), Math.floor(pos.coords.longitude)];
 }
-// get foursquare businesses
-async function getFoursquare(business) {
+
+// Getting business specific markers
+async function getBusinessMarkers(business, placesLayer, coords) {
+  let data = await callFSQapi(business, coords);
+
+  console.log(data);
+  let places = getLocationsArray(data);
+  console.log("places", places);
+  // add business markers
+  const placesMarker = getPlacesMarker(places, placesLayer);
+
+  return placesMarker;
+}
+
+// Fetching data from api
+async function callFSQapi(business, coords) {
   const options = {
     method: "GET",
     headers: {
-      Accept: "application/json",
-      Authorization: "fsq39nJkgK5siDaOrBajgtDkHuABZwU9Z2u2y5FfidMDeEQ=",
+      accept: "application/json",
+      Authorization: "API-Key",
     },
   };
-  let limit = 5;
-  let lat = myMap.coordinates[0];
-  let lon = myMap.coordinates[1];
+
+  console.log("business type", business);
+  const searchParams = new URLSearchParams({
+    query: `${business}`,
+    ll: `${coords}`,
+    limit: 5,
+  }).toString();
+  console.log("search query", searchParams);
+
   let response = await fetch(
-    `https://cors-anywhere.herokuapp.com/https://api.foursquare.com/v3/places/search?&query=${business}&limit=${limit}&ll=${lat}%2C${lon}`,
+    `https://api.foursquare.com/v3/places/search?${searchParams}`,
     options
-  );
-  let data = await response.text();
-  let parsedData = JSON.parse(data);
-  let businesses = parsedData.results;
-  return businesses;
+  ).catch((err) => console.error(err));
+  data = await response.json();
+  return data;
 }
-// process foursquare array
-function processBusinesses(data) {
-  let businesses = data.map((element) => {
-    let location = {
-      name: element.name,
-      lat: element.geocodes.main.latitude,
-      long: element.geocodes.main.longitude,
-    };
-    return location;
-  });
-  return businesses;
+
+// Create business locations array
+function getLocationsArray(response) {
+  let locationsArray = [];
+  for (let i = 0; i < response.results.length; i++) {
+    if (response.results[i].name) {
+      let place = {
+        name: response.results[i].name,
+        latitude: response.results[i].geocodes.main.latitude,
+        longitude: response.results[i].geocodes.main.longitude,
+      };
+      locationsArray.push(place);
+    }
+  }
+  return locationsArray;
 }
-// window
-window.onload = async () => {
+// Create markers for search results
+function getPlacesMarker(places, placesLayer) {
+  let placesMarker = [];
+  for (let i = 0; i < places.length; i++) {
+    //add business markers
+    var marker = L.marker([places[i].latitude, places[i].longitude]).addTo(
+      placesLayer
+    );
+    marker.bindPopup(`<b>${places[i].name}</b>`);
+    placesMarker.push(marker);
+  }
+  return placesMarker;
+}
+
+async function main() {
+  // Get geolocation of user
   const coords = await getCoords();
+
+  // Create map
   myMap.coordinates = coords;
-  myMap.buildMap();
-};
-//submit button
-document.getElementById("submit").addEventListener("click", async (event) => {
-  event.preventDefault();
-  let business = document.getElementById("business").value;
-  let data = await getFoursquare(business);
-  myMap.businesses = processBusinesses(data);
-  myMap.addMarkers();
-});
+  myMap.createMap();
+
+  // Submit event handler
+  document.querySelector("#submit").addEventListener("click", (e) => {
+    e.preventDefault();
+    myMap.placesLayer.clearLayers();
+    const business = document.getElementById("business").value;
+    getBusinessMarkers(business, myMap.placesLayer, myMap.coordinates);
+  });
+}
+
+main();
