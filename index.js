@@ -1,114 +1,66 @@
-const myMap = {
-  coordinates: [],
-  map: {},
-  placesLayer: {},
-  businessMarkers: [],
-  createMap() {
-    this.map = L.map("map").setView(this.coordinates, 12);
-    //Load tiles
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 12,
-      attribution:
-        '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(this.map);
-    //Add geolocation marker
-    var marker = L.marker(this.coordinates).addTo(this.map);
-    marker.bindPopup("<b>You are here</b>").openPopup();
-    this.placesLayer = L.layerGroup().addTo(this.map);
-  },
-};
-
+//TODO: get user location then find taco trucks near them, not random
+//https://developer.mozilla.org/en-US/docs/Web/API/Geolocation/getCurrentPosition
 async function getCoords() {
+  //user might reject or accept or take 5min to see that i asked them to give permission
+  //dont return promise resolve inline
   let pos = await new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(resolve, reject);
   });
 
+  //make it a little less accurate so not invasive of user privacy by rounding away digits
   return [Math.floor(pos.coords.latitude), Math.floor(pos.coords.longitude)];
 }
+function createMap(coords, tacoTrucks) {
+  //Create map
 
-// Getting business specific markers
-async function getBusinessMarkers(business, placesLayer, coords) {
-  let data = await callFSQapi(business, coords);
-
-  console.log(data);
-  let places = getLocationsArray(data);
-  console.log("places", places);
-  // add business markers
-  const placesMarker = getPlacesMarker(places, placesLayer);
-
-  return placesMarker;
+  var map = L.map("map").setView(coords, 13);
+  //Load tiles
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution:
+      '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }).addTo(map);
+  //Add markers
+  tacoTrucks.forEach((t) => createMarker(t, map));
 }
 
-// Fetching data from api
-async function callFSQapi(business, coords) {
-  const options = {
-    method: "GET",
-    headers: {
-      accept: "application/json",
-      Authorization: "API-Key",
-    },
-  };
+function createMarker(t, map) {
+  //map was undefined but their code didn't throw ref error
+  // console.log("whats wrong", t, map)
+  var marker = L.marker([t.lat, t.long]).bindPopup(t.name).addTo(map);
+}
 
-  console.log("business type", business);
-  const searchParams = new URLSearchParams({
-    query: `${business}`,
-    ll: `${coords}`,
-    limit: 5,
-  }).toString();
-  console.log("search query", searchParams);
-
-  let response = await fetch(
-    `https://api.foursquare.com/v3/places/search?${searchParams}`,
-    options
-  ).catch((err) => console.error(err));
-  data = await response.json();
+//get tacos from api
+let tacos_api_base_url = "https://60d23844858b410017b2d60b.mockapi.io/tacos";
+async function getTacoTrucks() {
+  let response = await fetch(tacos_api_base_url);
+  let data = await response.json();
   return data;
 }
 
-// Create business locations array
-function getLocationsArray(response) {
-  let locationsArray = [];
-  for (let i = 0; i < response.results.length; i++) {
-    if (response.results[i].name) {
-      let place = {
-        name: response.results[i].name,
-        latitude: response.results[i].geocodes.main.latitude,
-        longitude: response.results[i].geocodes.main.longitude,
-      };
-      locationsArray.push(place);
-    }
+async function searchTrucks(searchTerm) {
+  //load some data from an api
+  //hard to make this global because it is loaded in promise
+  let tacoTrucks = await getTacoTrucks();
+  // console.log(tacoTrucks)
+  //look inside each truck name does contain searchTerm?
+  if (searchTerm === undefined || searchTerm === "") {
+    return tacoTrucks;
   }
-  return locationsArray;
-}
-// Create markers for search results
-function getPlacesMarker(places, placesLayer) {
-  let placesMarker = [];
-  for (let i = 0; i < places.length; i++) {
-    //add business markers
-    var marker = L.marker([places[i].latitude, places[i].longitude]).addTo(
-      placesLayer
-    );
-    marker.bindPopup(`<b>${places[i].name}</b>`);
-    placesMarker.push(marker);
-  }
-  return placesMarker;
+  return tacoTrucks.filter((t) => t.name.includes(searchTerm.toLowerCase()));
 }
 
+//entry point of our code
 async function main() {
-  // Get geolocation of user
-  const coords = await getCoords();
+  let tacoTrucks = await searchTrucks();
+  console.log(tacoTrucks);
 
-  // Create map
-  myMap.coordinates = coords;
-  myMap.createMap();
-
-  // Submit event handler
-  document.querySelector("#submit").addEventListener("click", (e) => {
-    e.preventDefault();
-    myMap.placesLayer.clearLayers();
-    const business = document.getElementById("business").value;
-    getBusinessMarkers(business, myMap.placesLayer, myMap.coordinates);
-  });
+  //get coords
+  let coords = await getCoords();
+  console.log(coords);
+  //add map to screen
+  createMap(coords, tacoTrucks);
 }
 
+//execute main
 main();
