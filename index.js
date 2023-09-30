@@ -17,10 +17,7 @@ function showPosition(position) {
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
 
-  L.marker(currentPosition)
-    .addTo(map)
-    .bindPopup("here <i>we</i> <strong>are</strong>")
-    .openPopup();
+  L.marker(currentPosition).addTo(map).bindPopup("You are here").openPopup();
 }
 //event listener that grabs location data for our specific businesses using the FourSquare API
 document.getElementById("submit").addEventListener("click", async (event) => {
